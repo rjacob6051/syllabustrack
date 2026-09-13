@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
 app = FastAPI()
@@ -10,6 +10,10 @@ next_course_id = 1
 class CreateCourse(BaseModel):
     course_code: str
     name: str
+
+class UpdateCourse(BaseModel):
+    course_code: str | None = None
+    name: str | None = None
 
 @app.get("/api/health")
 def health_check():
@@ -33,7 +37,7 @@ def add_course(course: CreateCourse):
     }
 
     courses.append(new_course)
-    next_course_id+= 1
+    next_course_id += 1
     return new_course
 
 @app.get("/api/courses/{course_id}")
@@ -41,3 +45,23 @@ def get_course(course_id: int):
     for course in courses:
         if course["id"] == course_id:
             return course
+    raise HTTPException(status_code=404, detail="Course not found")
+
+@app.delete("/api/courses/{course_id}")
+def delete_course(course_id: int):
+    for course in courses:
+        if course["id"] == course_id:
+            courses.remove(course)
+            return {"message": "Course deleted"}
+    raise HTTPException(status_code=404, detail="Course not found")
+
+@app.patch("/api/courses/{course_id}")
+def update_course(course_id: int, updates: UpdateCourse):
+    for course in courses:
+        if course["id"] == course_id:
+            if updates.course_code is not None:
+                course["course_code"] = updates.course_code
+            if updates.name is not None:
+                course["name"] = updates.name
+            return course
+    raise HTTPException(status_code=404, detail="Course not found")
