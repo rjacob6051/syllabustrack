@@ -1,10 +1,17 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File
 from pydantic import BaseModel
 import sqlite3
 from pathlib import Path
+from datetime import date
+from pypdf import PdfReader
+from google import genai
+from typing import Literal
+
 DB_PATH = Path(__file__).resolve().parent / "syllabustrack.db"
 
 app = FastAPI()
+
+client = genai.Client()
 
 connection = sqlite3.connect(DB_PATH)
 connection.row_factory = sqlite3.Row
@@ -49,7 +56,7 @@ def course_doesnt_exist(cursor, course_id):
 def assignment_doesnt_exist(cursor, assignment_id):
     cursor.execute(
         """
-        SELECT * FROM courses
+        SELECT * FROM assignments
         WHERE id = ?
         """,
         (assignment_id,)
@@ -66,13 +73,21 @@ class UpdateCourse(BaseModel):
 
 class CreateAssignment(BaseModel):
     title: str
-    due_date: str
+    due_date: date
     type: str
 
 class UpdateAssignment(BaseModel):
     title: str | None = None
-    due_date: str | None = None
+    due_date: date | None = None
     type: str | None = None
+
+class AIAssignment(BaseModel):
+    title: str
+    due_date: date
+    type: Literal["homework", "exam", "quiz", "project", "paper", "presentation", "other"]
+
+class AIExtractionResult(BaseModel):
+    assignments: list[AIAssignment]
 
 @app.get("/api/health")
 def health_check():
@@ -203,14 +218,14 @@ def add_assignment(course_id: int, assignment: CreateAssignment):
     INSERT INTO assignments (course_id, title, due_date, type)
     VALUES (?, ?, ?, ?)
     """,
-    (course_id, assignment.title, assignment.due_date, assignment.type)
+    (course_id, assignment.title, assignment.due_date.isoformat(), assignment.type)
     )
     connection.commit()
     new_assignment = {
         "id": cursor.lastrowid,
         "course_id": course_id,
         "title": assignment.title,
-        "due_date": assignment.due_date,
+        "due_date": assignment.due_date.isoformat(),
         "type": assignment.type
     }
     connection.close()
@@ -257,7 +272,7 @@ def update_assignment(assignment_id: int, updates: UpdateAssignment):
             SET due_date = ?
             WHERE id = ?
             """,
-            (updates.due_date, assignment_id)
+            (updates.due_date.isoformat(), assignment_id)
             )
     if updates.type is not None:
         cursor.execute(
@@ -295,3 +310,71 @@ def delete_assignment(assignment_id: int):
     connection.commit()
     connection.close()
     return{"message": "Assignment Deleted"}
+
+@app.post("/api/courses/{course_id}/syllabus")
+def upload_syllabus(course_id: int, file: UploadFile = File(...)):
+    connection = get_db()
+    cursor = connection.cursor()
+    if course_doesnt_exist(cursor, course_id):
+        connection.close()
+        raise HTTPException(status_code=404, detail="Course not found")
+    connection.close()
+    if file.content_type != "application/pdf":
+        raise HTTPException(status_code=400, detail="Must be a PDF")
+    reader = PdfReader(file.file)
+    text = ""
+    for page in reader.pages:
+        page_text = page.extract_text(extraction_mode="layout")
+
+        if page_text:
+            text += page_text + "\n\n"
+
+    interaction = client.interactions.create(
+        model="gemini-3.8-flash",
+        input=f"""
+        Extract the releveant assignment information from the given syllabus text:
+
+        SYLLABUS START
+        {text}
+        SYLLABUS END
+        """,
+        response_format=[
+            {
+            "type": "text",
+            "mime_type": "application/json",
+            "schema": AIExtractionResult.model_json_schema()
+            }
+    ],
+    generation_config={
+        "thinking_level": "low"
+    }
+    )
+    answer = AIExtractionResult.model_validate_json(interaction.output_text)
+    return {
+        "filename": file.filename,
+        "assignments": answer.assignments
+    }
+
+@app.get("/api/test-gemini")
+def test_gemini():
+    interaction = client.interactions.create(
+        model="gemini-3.8-flash",
+        input="""
+        Extract the releveant assignment information from the given syllabus text:
+
+        HW due September 20, 2026
+        Midterm 1 on October 3, 2026
+        """,
+        response_format=[
+            {
+            "type": "text",
+            "mime_type": "application/json",
+            "schema": AIExtractionResult.model_json_schema()
+            }
+    ],
+    generation_config={
+        "thinking_level": "low"
+    }
+    )
+    answer = AIExtractionResult.model_validate_json(interaction.output_text)
+    return answer
