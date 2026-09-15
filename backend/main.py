@@ -6,10 +6,13 @@ from datetime import date
 from pypdf import PdfReader
 from google import genai
 from typing import Literal
+from dotenv import load_dotenv
 
 DB_PATH = Path(__file__).resolve().parent / "syllabustrack.db"
 
 app = FastAPI()
+
+load_dotenv()
 
 client = genai.Client()
 
@@ -87,6 +90,9 @@ class AIAssignment(BaseModel):
     type: Literal["homework", "exam", "quiz", "project", "paper", "presentation", "other"]
 
 class AIExtractionResult(BaseModel):
+    assignments: list[AIAssignment]
+
+class ApprovedAssignments(BaseModel):
     assignments: list[AIAssignment]
 
 @app.get("/api/health")
@@ -378,3 +384,31 @@ def test_gemini():
     )
     answer = AIExtractionResult.model_validate_json(interaction.output_text)
     return answer
+
+@app.post("/api/courses/{course_id}/assignments/bulk")
+def add_assignments(course_id: int, assignments: ApprovedAssignments):
+    accepted_assignments = []
+    connection = get_db()
+    cursor = connection.cursor()
+    if course_doesnt_exist(cursor, course_id):
+        connection.close()
+        raise HTTPException(status_code=404, detail="Course not found")
+    for assignment in assignments.assignments:
+        cursor.execute(
+            """
+        INSERT INTO assignments (course_id, title, due_date, type)
+        VALUES (?, ?, ?, ?)
+        """,
+        (course_id, assignment.title, assignment.due_date.isoformat(), assignment.type)
+        )
+        new_assignment = {
+            "id": cursor.lastrowid,
+            "course_id": course_id,
+            "title": assignment.title,
+            "due_date": assignment.due_date.isoformat(),
+            "type": assignment.type
+        }
+        accepted_assignments.append(new_assignment)
+    connection.commit()
+    connection.close()
+    return accepted_assignments
