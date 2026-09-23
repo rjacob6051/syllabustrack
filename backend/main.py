@@ -7,10 +7,19 @@ from pypdf import PdfReader
 from google import genai
 from typing import Literal
 from dotenv import load_dotenv
+from fastapi.middleware.cors import CORSMiddleware
 
 DB_PATH = Path(__file__).resolve().parent / "syllabustrack.db"
 
 app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 load_dotenv()
 
