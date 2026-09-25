@@ -264,6 +264,19 @@ def get_assignments(course_id: int):
     connection.close()
     return [dict(row) for row in rows]
 
+@app.get("/api/assignments")    
+def get_all_assignments():
+    connection = get_db()
+    cursor = connection.cursor()
+    cursor.execute(
+    """
+    SELECT * FROM assignments
+    """
+    )
+    rows = cursor.fetchall()
+    connection.close()
+    return [dict(row) for row in rows]
+
 @app.patch("/api/assignments/{assignment_id}")
 def update_assignment(assignment_id: int, updates: UpdateAssignment):
     connection = get_db()
