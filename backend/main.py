@@ -13,6 +13,8 @@ DB_PATH = Path(__file__).resolve().parent / "syllabustrack.db"
 
 app = FastAPI()
 
+course_colors = ["red", "blue", "green", "purple", "orange"]
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173"],
@@ -33,7 +35,8 @@ cursor.execute("""
 CREATE TABLE IF NOT EXISTS courses (
 id INTEGER PRIMARY KEY AUTOINCREMENT,
 course_code TEXT NOT NULL,
-name TEXT NOT NULL
+name TEXT NOT NULL,
+color TEXT NOT NULL
 )
 """)
 cursor.execute("""
@@ -48,6 +51,7 @@ FOREIGN KEY (course_id) references courses(id)
 """)
 connection.commit()
 connection.close()
+
 
 def get_db():
     connection = sqlite3.connect(DB_PATH)
@@ -82,6 +86,7 @@ class CreateCourse(BaseModel):
 class UpdateCourse(BaseModel):
     course_code: str | None = None
     name: str | None = None
+    color: str | None = None
 
 class CreateAssignment(BaseModel):
     title: str
@@ -136,12 +141,22 @@ def add_course(course: CreateCourse):
     """,
     (course.course_code, course.name)
     )
-    connection.commit()
+    new_course_id = cursor.lastrowid
+    course_color = course_colors[new_course_id % len(course_colors)]
+    cursor.execute("""
+    UPDATE courses
+    SET color = ?
+    WHERE id = ?
+    """,
+    (course_color, new_course_id)
+    )
     new_course = {
-        "id": cursor.lastrowid,
+        "id": new_course_id,
         "course_code": course.course_code,
-        "name": course.name
+        "name": course.name,
+        "color": course_color
     }
+    connection.commit()
     connection.close()
     return new_course
 
@@ -209,6 +224,15 @@ def update_course(course_id: int, updates: UpdateCourse):
             WHERE id = ?
             """,
             (updates.name, course_id)
+            )
+    if updates.color is not None:
+        cursor.execute(
+            """
+            UPDATE courses
+            SET color = ?
+            WHERE id = ?
+            """,
+            (updates.color, course_id)
             )
     connection.commit()
     cursor.execute(
