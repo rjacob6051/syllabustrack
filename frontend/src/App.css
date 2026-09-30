@@ -46,3 +46,7 @@
 .course-selection .courseBullet{
   margin-left: 8px;
 }
+
+.completed-assignment{
+  opacity: 0.2;
+}

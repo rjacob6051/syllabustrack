@@ -46,6 +46,7 @@ course_id INTEGER NOT NULL,
 title TEXT NOT NULL,
 due_date TEXT NOT NULL,
 type TEXT NOT NULL,
+completed INTEGER NOT NULL DEFAULT 0,
 FOREIGN KEY (course_id) references courses(id)
 )
 """)
@@ -97,6 +98,7 @@ class UpdateAssignment(BaseModel):
     title: str | None = None
     due_date: date | None = None
     type: str | None = None
+    completed: bool | None = None
 
 class AIAssignment(BaseModel):
     title: str
@@ -108,6 +110,14 @@ class AIExtractionResult(BaseModel):
 
 class ApprovedAssignments(BaseModel):
     assignments: list[AIAssignment]
+
+class AssignmentResponse(BaseModel):
+    id: int
+    course_id: int
+    title: str
+    due_date: date
+    type: str
+    completed: bool
 
 @app.get("/api/health")
 def health_check():
@@ -203,38 +213,7 @@ def update_course(course_id: int, updates: UpdateCourse):
     """,
     (course_id,)
     )
-    row = cursor.fetchone()
-    if row is None:
-        connection.close()
-        raise HTTPException(status_code=404, detail="Course not found")
-    if updates.course_code is not None:
-        cursor.execute(
-            """
-            UPDATE courses
-            SET course_code = ?
-            WHERE id = ?
-            """,
-            (updates.course_code, course_id)
-            )
-    if updates.name is not None:
-        cursor.execute(
-            """
-            UPDATE courses
-            SET name = ?
-            WHERE id = ?
-            """,
-            (updates.name, course_id)
-            )
-    if updates.color is not None:
-        cursor.execute(
-            """
-            UPDATE courses
-            SET color = ?
-            WHERE id = ?
-            """,
-            (updates.color, course_id)
-            )
-    connection.commit()
+ 
     cursor.execute(
         """
     SELECT * FROM courses WHERE id = ?
@@ -245,7 +224,7 @@ def update_course(course_id: int, updates: UpdateCourse):
     connection.close()
     return dict(row)
 
-@app.post("/api/courses/{course_id}/assignments")
+@app.post("/api/courses/{course_id}/assignments", response_model=AssignmentResponse)
 def add_assignment(course_id: int, assignment: CreateAssignment):
     connection = get_db()
     cursor = connection.cursor()
@@ -265,12 +244,13 @@ def add_assignment(course_id: int, assignment: CreateAssignment):
         "course_id": course_id,
         "title": assignment.title,
         "due_date": assignment.due_date.isoformat(),
-        "type": assignment.type
+        "type": assignment.type,
+        "completed": False
     }
     connection.close()
     return new_assignment
 
-@app.get("/api/courses/{course_id}/assignments")    
+@app.get("/api/courses/{course_id}/assignments", response_model=list[AssignmentResponse])    
 def get_assignments(course_id: int):
     connection = get_db()
     cursor = connection.cursor()
@@ -288,7 +268,7 @@ def get_assignments(course_id: int):
     connection.close()
     return [dict(row) for row in rows]
 
-@app.get("/api/assignments")    
+@app.get("/api/assignments", response_model=list[AssignmentResponse])    
 def get_all_assignments():
     connection = get_db()
     cursor = connection.cursor()
@@ -301,7 +281,7 @@ def get_all_assignments():
     connection.close()
     return [dict(row) for row in rows]
 
-@app.patch("/api/assignments/{assignment_id}")
+@app.patch("/api/assignments/{assignment_id}", response_model=AssignmentResponse)
 def update_assignment(assignment_id: int, updates: UpdateAssignment):
     connection = get_db()
     cursor = connection.cursor()
@@ -334,6 +314,15 @@ def update_assignment(assignment_id: int, updates: UpdateAssignment):
             WHERE id = ?
             """,
             (updates.type, assignment_id)
+            )
+    if updates.completed is not None:
+        cursor.execute(
+            """
+            UPDATE assignments
+            SET completed = ?
+            WHERE id = ?
+            """,
+            (updates.completed, assignment_id)
             )
     connection.commit()
     cursor.execute(
@@ -431,7 +420,7 @@ def test_gemini():
     answer = AIExtractionResult.model_validate_json(interaction.output_text)
     return answer
 
-@app.post("/api/courses/{course_id}/assignments/bulk")
+@app.post("/api/courses/{course_id}/assignments/bulk", response_model=list[AssignmentResponse])
 def add_assignments(course_id: int, assignments: ApprovedAssignments):
     accepted_assignments = []
     connection = get_db()
@@ -452,7 +441,8 @@ def add_assignments(course_id: int, assignments: ApprovedAssignments):
             "course_id": course_id,
             "title": assignment.title,
             "due_date": assignment.due_date.isoformat(),
-            "type": assignment.type
+            "type": assignment.type,
+            "completed": False
         }
         accepted_assignments.append(new_assignment)
     connection.commit()

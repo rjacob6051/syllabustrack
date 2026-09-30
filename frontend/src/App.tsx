@@ -16,6 +16,7 @@ type Assignment = {
   title: string;
   due_date: string;
   type: string;
+  completed: boolean;
 };
 
 type ExtractedAssignment = {
@@ -68,7 +69,11 @@ function App() {
     );
     await response.json();
     await loadAssignments();
+    setUploadCourseId(null);
+    setUploadFile(null);
+    setExtractedAssignments([]);
     setScreen("dashboard");
+
   }
 
   async function changeCourseColor(courseId: number, color: string) {
@@ -82,15 +87,23 @@ function App() {
         body: JSON.stringify({ color: color }),
       }
     );
-    const updatedCourse = await response.json();
-    setCourses(
-      courses.map((course) => {
-        if (course.id === updatedCourse.id) {
-          return updatedCourse;
-        }
-        return course;
-      })
+    await response.json();
+    await loadCourses();
+  }
+
+  async function completeAssignment(assignmentId: number) {
+    const response = await fetch(
+      `http://127.0.0.1:8000/api/assignments/${assignmentId}`,
+      {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ completed: true }),
+      }
     );
+    await response.json();
+    await loadAssignments();
   }
 
   async function uploadSyllabus() {
@@ -128,6 +141,7 @@ function App() {
       title: assignment.title,
       date: assignment.due_date,
       color: courseColor,
+      classNames: assignment.completed ? ["completed-assignment"]: [],
     };
   });
 
@@ -292,7 +306,7 @@ function App() {
           <div className="upcoming">
             <h2>Upcoming</h2>
             <ul>
-              {selectedAssignments.map((assignment) => {
+              {selectedAssignments.filter((assignment=>assignment.completed == false)).map((assignment) => {
                 const readableDate = new Date(
                   `${assignment.due_date}T00:00:00`
                 ).toLocaleDateString("en-US", {
@@ -309,7 +323,7 @@ function App() {
                       className="courseBullet"
                       style={{ backgroundColor: courseColor }}
                     ></span>
-                    {readableDate} - {assignment.title}
+                    {readableDate} - {assignment.title} - <button onClick={(() => completeAssignment(assignment.id))}>Mark Completed</button>
                   </li>
                 );
               })}
