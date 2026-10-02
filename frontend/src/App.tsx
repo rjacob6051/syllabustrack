@@ -28,9 +28,9 @@ type ExtractedAssignment = {
 const courseColors = ["red", "blue", "green", "purple", "orange"];
 
 function App() {
-  const [screen, setScreen] = useState<"dashboard" | "upload" | "review">(
-    "dashboard"
-  );
+  const [screen, setScreen] = useState<
+    "dashboard" | "upload" | "review" | "completed"
+  >("dashboard");
   const [courses, setCourses] = useState<Course[]>([]);
   const [uploadCourseId, setUploadCourseId] = useState<number | null>(null);
   const [selectedCourses, setSelectedCourses] = useState<number[]>([]);
@@ -63,8 +63,8 @@ function App() {
       `http://127.0.0.1:8000/api/courses/${uploadCourseId}/assignments/bulk`,
       {
         method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({assignments: extractedAssignments})
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ assignments: extractedAssignments }),
       }
     );
     await response.json();
@@ -73,7 +73,6 @@ function App() {
     setUploadFile(null);
     setExtractedAssignments([]);
     setScreen("dashboard");
-
   }
 
   async function changeCourseColor(courseId: number, color: string) {
@@ -141,7 +140,7 @@ function App() {
       title: assignment.title,
       date: assignment.due_date,
       color: courseColor,
-      classNames: assignment.completed ? ["completed-assignment"]: [],
+      classNames: assignment.completed ? ["completed-assignment"] : [],
     };
   });
 
@@ -241,11 +240,27 @@ function App() {
         <button onClick={saveReviewedAssignments}>Save</button>
       </div>
     );
+  }
+  if (screen == "completed") {
+    return (
+      <div className="completedwrapper">
+        <div>Your Completed Assignments</div>
+        <ul className="completedassignments">
+          {assignments
+            .filter((assignment) => assignment.completed)
+            .map((assignment) => (
+              <li key={assignment.id}>{assignment.title}</li>
+            ))}
+        </ul>
+        <button onClick={() => setScreen("dashboard")}>Return</button>
+      </div>
+    );
   } else {
     return (
       <div className="outerwrapper">
         <h1>SyllabusTrack</h1>
         <button onClick={() => setScreen("upload")}>Upload Syllabus</button>
+        <button onClick={() => setScreen("completed")}>View Completed</button>
 
         <div className="dashboard">
           <div className="course-selection">
@@ -306,27 +321,88 @@ function App() {
           <div className="upcoming">
             <h2>Upcoming</h2>
             <ul>
-              {selectedAssignments.filter((assignment=>assignment.completed == false)).map((assignment) => {
-                const readableDate = new Date(
-                  `${assignment.due_date}T00:00:00`
-                ).toLocaleDateString("en-US", {
-                  month: "short",
-                  day: "numeric",
-                });
-                const course = courses.find(
-                  (course) => course.id === assignment.course_id
-                );
-                const courseColor = course?.color ?? "gray";
-                return (
-                  <li key={assignment.id}>
-                    <span
-                      className="courseBullet"
-                      style={{ backgroundColor: courseColor }}
-                    ></span>
-                    {readableDate} - {assignment.title} - <button onClick={(() => completeAssignment(assignment.id))}>Mark Completed</button>
-                  </li>
-                );
-              })}
+              {selectedAssignments
+                .filter((assignment) => {
+                  if (assignment.completed == true) {
+                    return false;
+                  }
+                  const assignmentTime = new Date(
+                    `${assignment.due_date}T00:00:00`
+                  ).getTime();
+
+                  const today = new Date();
+                  today.setHours(0,0,0,0);
+                  const todayTime = today.getTime();
+                  const deadline = todayTime + (31 * 24 * 60 * 60 * 1000);
+
+                  return assignmentTime >= todayTime && assignmentTime <= deadline;
+                })
+                .map((assignment) => {
+                  const readableDate = new Date(
+                    `${assignment.due_date}T00:00:00`
+                  ).toLocaleDateString("en-US", {
+                    month: "short",
+                    day: "numeric",
+                  });
+                  const course = courses.find(
+                    (course) => course.id === assignment.course_id
+                  );
+                  const courseColor = course?.color ?? "gray";
+                  return (
+                    <li key={assignment.id}>
+                      <span
+                        className="courseBullet"
+                        style={{ backgroundColor: courseColor }}
+                      ></span>
+                      {readableDate} - {assignment.title} -{" "}
+                      <button onClick={() => completeAssignment(assignment.id)}>
+                        Mark Completed
+                      </button>
+                    </li>
+                  );
+                })}
+            </ul>
+            <h2>Past Due</h2>
+            <ul>
+              {selectedAssignments
+                .filter((assignment) => {
+                  if (assignment.completed == true) {
+                    return false;
+                  }
+                  const assignmentTime = new Date(
+                    `${assignment.due_date}T00:00:00`
+                  ).getTime();
+
+                  const today = new Date();
+                  today.setHours(0,0,0,0);
+                  const todayTime = today.getTime();
+
+                  return assignmentTime < todayTime
+                })
+                .map((assignment) => {
+                  const readableDate = new Date(
+                    `${assignment.due_date}T00:00:00`
+                  ).toLocaleDateString("en-US", {
+                    month: "short",
+                    day: "numeric",
+                  });
+                  const course = courses.find(
+                    (course) => course.id === assignment.course_id
+                  );
+                  const courseColor = course?.color ?? "gray";
+                  return (
+                    <li key={assignment.id}>
+                      <span
+                        className="courseBullet"
+                        style={{ backgroundColor: courseColor }}
+                      ></span>
+                      {readableDate} - {assignment.title} -{" "}
+                      <button onClick={() => completeAssignment(assignment.id)}>
+                        Mark Completed
+                      </button>
+                    </li>
+                  );
+                })}
             </ul>
           </div>
         </div>

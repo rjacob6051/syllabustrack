@@ -50,3 +50,11 @@
 .completed-assignment{
   opacity: 0.2;
 }
+
+.completedassignments{
+  text-align: left;
+}
+
+.completed-assignments li{
+  margin: 100px;
+}
